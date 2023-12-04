@@ -1,0 +1,31 @@
+syntax = "proto3";
+
+option go_package = "github.com/PrSmitch/Protei_TZ/user";
+
+service UserService {
+  rpc ModifyUser(userRequest) returns (userResponse);
+}
+
+message userEmployee {
+  int64 id = 1;
+  string Name  = 2;
+  int64 workPhone = 3;
+  string email = 4;
+  string dateFrom = 5;
+  string dateTo = 6;
+}
+
+message userAbsence {
+  repeated int64 id = 1;
+  string dateFrom = 2;
+  string dateTo = 3;
+}
+
+message userRequest {
+  userAbsence absence = 1;
+  userEmployee employee = 2;
+}
+
+message userResponse {
+  userEmployee user = 1;
+}

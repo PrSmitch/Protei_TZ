@@ -1,0 +1,19 @@
+{
+  "grpc": {
+    "ip": "127.0.0.1",
+    "port": "50051",
+    "queue_size": 100,
+    "handler_pool_size": 10
+  },
+  "http": {
+      "ip": "external-server-ip",
+      "port": "8080",
+      "auth": {
+        "username": "your-username",
+        "password": "your-password"
+      }
+  },
+  "logging": {
+    "level": "info"
+  }
+}
