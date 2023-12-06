@@ -2,8 +2,8 @@
   "grpc": {
     "ip": "127.0.0.1",
     "port": "50051",
-    "queue_size": 100,
-    "handler_pool_size": 10
+    "queue_size": 10,
+    "handler_pool_size": 3
   },
   "http": {
       "ip": "localhost",

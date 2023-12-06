@@ -55,16 +55,17 @@ type myServer struct {
 	user.UnimplementedUserServiceServer
 }
 
-func (s myServer) ModifyUser(context.Context, *user.UserRequest) (*user.UserResponse, error) {
+func (s myServer) ModifyUser(ctx context.Context, req *user.ModifyUserRequest) (*user.ModifyUserResponse, error) {
 	// здесь будет вся обработка нужная, пока возвращает простой пример
-	return &user.UserResponse{User: &user.UserEmployee{
+	return &user.ModifyUserResponse{Users: make([]*user.UserInfo, 2)}, nil
+	/* return &user.ModifyUserResponse{ User: &user.UserEmployee{
 		Id:        1234,
 		Name:      "Sergey :)",
 		WorkPhone: 12332,
 		Email:     "fff@mail.ru",
 		DateFrom:  "ss",
 		DateTo:    "sss",
-	}}, nil
+	}}, nil */
 }
 
 func main() {
@@ -72,7 +73,7 @@ func main() {
 
 	username := config.Http.Auth.Username
 	password := config.Http.Auth.Password
-	url := fmt.Sprintf("https://%s:%s/Portal/springApi/api", config.Http.IP, config.Http.Port)
+	url := fmt.Sprintf("http://%s:%s/Portal/springApi/api", config.Http.IP, config.Http.Port)
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		log.Fatalf("Ошибка при СОЗДАНИИ запроса: %s", err)
@@ -89,7 +90,8 @@ func main() {
 	defer resp.Body.Close()
 	fmt.Println("Аутентификация выполнена, запускается GRPC-сервер")
 
-	lis, err := net.Listen("tcp", config.Grpc.Ip+":"+config.Grpc.Port)
+	address := config.Grpc.Ip + ":" + config.Grpc.Port
+	lis, err := net.Listen("tcp", address)
 	if err != nil {
 		log.Fatalf("Ошибка при создании listner: %s", err)
 	}

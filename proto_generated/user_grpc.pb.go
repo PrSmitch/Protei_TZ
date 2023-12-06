@@ -22,7 +22,7 @@ const _ = grpc.SupportPackageIsVersion7
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type UserServiceClient interface {
-	ModifyUser(ctx context.Context, in *UserRequest, opts ...grpc.CallOption) (*UserResponse, error)
+	ModifyUser(ctx context.Context, in *ModifyUserRequest, opts ...grpc.CallOption) (*ModifyUserResponse, error)
 }
 
 type userServiceClient struct {
@@ -33,8 +33,8 @@ func NewUserServiceClient(cc grpc.ClientConnInterface) UserServiceClient {
 	return &userServiceClient{cc}
 }
 
-func (c *userServiceClient) ModifyUser(ctx context.Context, in *UserRequest, opts ...grpc.CallOption) (*UserResponse, error) {
-	out := new(UserResponse)
+func (c *userServiceClient) ModifyUser(ctx context.Context, in *ModifyUserRequest, opts ...grpc.CallOption) (*ModifyUserResponse, error) {
+	out := new(ModifyUserResponse)
 	err := c.cc.Invoke(ctx, "/UserService/ModifyUser", in, out, opts...)
 	if err != nil {
 		return nil, err
@@ -46,7 +46,7 @@ func (c *userServiceClient) ModifyUser(ctx context.Context, in *UserRequest, opt
 // All implementations must embed UnimplementedUserServiceServer
 // for forward compatibility
 type UserServiceServer interface {
-	ModifyUser(context.Context, *UserRequest) (*UserResponse, error)
+	ModifyUser(context.Context, *ModifyUserRequest) (*ModifyUserResponse, error)
 	mustEmbedUnimplementedUserServiceServer()
 }
 
@@ -54,7 +54,7 @@ type UserServiceServer interface {
 type UnimplementedUserServiceServer struct {
 }
 
-func (UnimplementedUserServiceServer) ModifyUser(context.Context, *UserRequest) (*UserResponse, error) {
+func (UnimplementedUserServiceServer) ModifyUser(context.Context, *ModifyUserRequest) (*ModifyUserResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ModifyUser not implemented")
 }
 func (UnimplementedUserServiceServer) mustEmbedUnimplementedUserServiceServer() {}
@@ -71,7 +71,7 @@ func RegisterUserServiceServer(s grpc.ServiceRegistrar, srv UserServiceServer) {
 }
 
 func _UserService_ModifyUser_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(UserRequest)
+	in := new(ModifyUserRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -83,7 +83,7 @@ func _UserService_ModifyUser_Handler(srv interface{}, ctx context.Context, dec f
 		FullMethod: "/UserService/ModifyUser",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(UserServiceServer).ModifyUser(ctx, req.(*UserRequest))
+		return srv.(UserServiceServer).ModifyUser(ctx, req.(*ModifyUserRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
