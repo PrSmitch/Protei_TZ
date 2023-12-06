@@ -6,11 +6,11 @@
     "handler_pool_size": 10
   },
   "http": {
-      "ip": "external-server-ip",
+      "ip": "localhost",
       "port": "8080",
       "auth": {
-        "username": "your-username",
-        "password": "your-password"
+        "username": "admin",
+        "password": "admin"
       }
   },
   "logging": {

@@ -2,12 +2,14 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	user "github.com/PrSmitch/Protei_TZ/proto_generated"
 	"google.golang.org/grpc"
 	"log"
 	"net"
+	"net/http"
 	"os"
 )
 
@@ -26,6 +28,7 @@ type GRPC struct {
 type HTTP struct {
 	IP   string       `json:"ip"`
 	Port string       `json:"port"`
+	Url  string       `json:"url"`
 	Auth ExternalAuth `json:"auth"`
 }
 
@@ -66,16 +69,35 @@ func (s myServer) ModifyUser(context.Context, *user.UserRequest) (*user.UserResp
 
 func main() {
 	config := LoadConfiguration("config.json")
-	address := config.Grpc.Ip + ":" + config.Grpc.Port
-	lis, err := net.Listen("tcp", address)
+
+	username := config.Http.Auth.Username
+	password := config.Http.Auth.Password
+	url := fmt.Sprintf("https://%s:%s/Portal/springApi/api", config.Http.IP, config.Http.Port)
+	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		log.Fatalf("can't create listener: %s", err)
+		log.Fatalf("Ошибка при СОЗДАНИИ запроса: %s", err)
+	}
+	auth := username + ":" + password
+	basicAuth := "Basic " + base64.StdEncoding.EncodeToString([]byte(auth))
+	req.Header.Add("Authorization", basicAuth)
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Fatalf("Ошибка при ОТПРАВКЕ запроса: %s", err)
+	}
+	defer resp.Body.Close()
+	fmt.Println("Аутентификация выполнена, запускается GRPC-сервер")
+
+	lis, err := net.Listen("tcp", config.Grpc.Ip+":"+config.Grpc.Port)
+	if err != nil {
+		log.Fatalf("Ошибка при создании listner: %s", err)
 	}
 	serverRegistrar := grpc.NewServer()
 	service := &myServer{}
 	user.RegisterUserServiceServer(serverRegistrar, service)
 	err = serverRegistrar.Serve(lis)
 	if err != nil {
-		log.Fatalf("can't serve: %s", err)
+		log.Fatalf("Ошибка при serve: %s", err)
 	}
 }
