@@ -6,22 +6,23 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	user "github.com/PrSmitch/Protei_TZ/proto_generated"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 	"io"
 	"log"
 	"net"
 	"net/http"
 	"os"
-	"sync"
+	"path/filepath"
 	"time"
+
+	user "github.com/PrSmitch/Protei_TZ/proto_generated"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 type Config struct {
-	Grpc GRPC
 	Http HTTP
+	Grpc GRPC
 }
 
 type GRPC struct {
@@ -45,7 +46,7 @@ type ExternalAuth struct {
 
 func LoadConfiguration(file string) Config {
 	var config Config
-	configFile, err := os.Open(file)
+	configFile, err := os.Open(filepath.Clean(file))
 	if err != nil {
 		fmt.Println(err.Error())
 	}
@@ -58,22 +59,19 @@ func LoadConfiguration(file string) Config {
 }
 
 type myServer struct {
+	queue     chan *user.ModifyUserRequest
+	url       string
+	basicAuth string
 	user.UnimplementedUserServiceServer
-	queue         chan *user.ModifyUserRequest
-	workers       int
-	processedData map[string]*[]user.UserInfo
-	mutex         sync.Mutex
-	basicAuth     string
-	url           string
+	workers int
 }
 
 func newServer(queueSize, workers int, basicAuth, url string) *myServer {
 	return &myServer{
-		queue:         make(chan *user.ModifyUserRequest, queueSize),
-		workers:       workers,
-		processedData: make(map[string]*[]user.UserInfo),
-		basicAuth:     basicAuth,
-		url:           url,
+		queue:     make(chan *user.ModifyUserRequest, queueSize),
+		workers:   workers,
+		basicAuth: basicAuth,
+		url:       url,
 	}
 }
 
@@ -92,21 +90,21 @@ func (s *myServer) processRequests(req *user.ModifyUserRequest) (*user.ModifyUse
 		reqEmployeeJSON, _ := json.Marshal(val.Employee)
 		reqEmployee, err := http.NewRequest("POST", urlEmployee, bytes.NewBuffer(reqEmployeeJSON))
 		if err != nil {
-			log.Fatalf("Ошибка при СОЗДАНИИ запроса: %s", err)
+			fmt.Printf("Ошибка при СОЗДАНИИ запроса: %s", err)
 		}
 		reqEmployee.Header.Add("Authorization", s.basicAuth)
 		reqEmployee.Header.Set("Content-Type", "application/json")
 		client := &http.Client{}
 		respEmployee, err := client.Do(reqEmployee)
 		if err != nil {
-			log.Fatalf("Ошибка при ОТПРАВКЕ запроса: %s", err)
+			fmt.Printf("Ошибка при ОТПРАВКЕ запроса: %s", err)
 		}
 		defer respEmployee.Body.Close()
 		bodyEmployee, _ := io.ReadAll(respEmployee.Body)
 		EmployeeResponse := new(EmployeeContract)
 		err = json.Unmarshal(bodyEmployee, EmployeeResponse)
 		if err != nil {
-			log.Fatalf("Ошибка при UNMARSHAL запроса: %s", err)
+			fmt.Printf("Ошибка при UNMARSHAL запроса: %s", err)
 		}
 
 		val.Absence.Id = []int64{EmployeeResponse.Id}
@@ -114,20 +112,20 @@ func (s *myServer) processRequests(req *user.ModifyUserRequest) (*user.ModifyUse
 		reqAbsenceJSON, _ := json.Marshal(val.Absence)
 		reqAbsence, err := http.NewRequest("POST", urlAbsence, bytes.NewBuffer(reqAbsenceJSON))
 		if err != nil {
-			log.Fatalf("Ошибка при СОЗДАНИИ запроса: %s", err)
+			fmt.Printf("Ошибка при СОЗДАНИИ запроса: %s", err)
 		}
 		reqAbsence.Header.Add("Authorization", s.basicAuth)
 		reqAbsence.Header.Set("Content-Type", "application/json")
 		respAbsence, err := client.Do(reqAbsence)
 		if err != nil {
-			log.Fatalf("Ошибка при ОТПРАВКЕ запроса: %s", err)
+			fmt.Printf("Ошибка при ОТПРАВКЕ запроса: %s", err)
 		}
 		defer respAbsence.Body.Close()
 		bodyAbsence, _ := io.ReadAll(respAbsence.Body)
 		AbsenceResponse := new(AbsenceContract)
 		err = json.Unmarshal(bodyAbsence, AbsenceResponse)
 		if err != nil {
-			log.Fatalf("Ошибка при UNMARSHAL запроса: %s", err)
+			fmt.Printf("Ошибка при UNMARSHAL запроса: %s", err)
 		}
 		var emoji string
 		switch AbsenceResponse.Id {
@@ -162,26 +160,23 @@ func (s *myServer) startWorkers() {
 }
 
 func (s *myServer) worker() {
-	for {
-		select {
-		case req := <-s.queue:
-			_, _ = s.processRequests(req)
-		}
+	for req := range s.queue {
+		_, _ = s.processRequests(req)
 	}
 }
 
 type EmployeeContract struct {
-	Id          int64  `json:"id"`
 	DisplayName string `json:"displayName"`
 	Email       string `json:"email"`
+	Id          int64  `json:"id"`
 	WorkPhone   int64  `json:"workPhone"`
 }
 
 type AbsenceContract struct {
-	Id         int64  `json:"id"`
-	PersonID   int64  `json:"personid"`
 	CreateDate string `json:"createDate"`
 	DateFrom   string `json:"dateFrom"`
+	Id         int64  `json:"id"`
+	PersonID   int64  `json:"personid"`
 	ReasonID   int64  `json:"reasonid"`
 }
 
