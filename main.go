@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -11,6 +12,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"sync"
 )
 
 type Config struct {
@@ -19,10 +21,10 @@ type Config struct {
 }
 
 type GRPC struct {
-	Ip                string `json:"ip"`
-	Port              string `json:"port"`
-	Queue_size        int    `json:"queue_size"`
-	Handler_pool_size int    `json:"handler_pool_size"`
+	Ip              string `json:"ip"`
+	Port            string `json:"port"`
+	QueueSize       int    `json:"queue_size"`
+	HandlerPoolSize int    `json:"handler_pool_size"`
 }
 
 type HTTP struct {
@@ -53,11 +55,30 @@ func LoadConfiguration(file string) Config {
 
 type myServer struct {
 	user.UnimplementedUserServiceServer
+	queue         chan *user.ModifyUserRequest
+	workers       int
+	processedData map[string]*[]user.UserInfo
+	mutex         sync.Mutex
+	basicAuth     string
 }
 
-func (s myServer) ModifyUser(ctx context.Context, req *user.ModifyUserRequest) (*user.ModifyUserResponse, error) {
-	// здесь будет вся обработка нужная, пока возвращает простой пример
-	return &user.ModifyUserResponse{Users: make([]*user.UserInfo, 2)}, nil
+func newServer(queueSize, workers int, basicAuth string) *myServer {
+	return &myServer{
+		queue:         make(chan *user.ModifyUserRequest, queueSize),
+		workers:       workers,
+		processedData: make(map[string]*[]user.UserInfo),
+		basicAuth:     basicAuth,
+	}
+}
+
+func (s *myServer) ModifyUser(ctx context.Context, req *user.ModifyUserRequest) (*user.ModifyUserResponse, error) {
+	select {
+	case s.queue <- req:
+		return s.processRequests(req)
+	default:
+		return nil, grpc.Errorf(grpc.Code(resourceExhausted), "Очередь полная")
+	}
+	// return &user.ModifyUserResponse{Users: make([]*user.UserInfo, 2)}, nil
 	/* return &user.ModifyUserResponse{ User: &user.UserEmployee{
 		Id:        1234,
 		Name:      "Sergey :)",
@@ -66,6 +87,34 @@ func (s myServer) ModifyUser(ctx context.Context, req *user.ModifyUserRequest) (
 		DateFrom:  "ss",
 		DateTo:    "sss",
 	}}, nil */
+}
+
+func (s *myServer) processRequests(req *user.ModifyUserRequest) (*user.ModifyUserResponse, error) {
+	for key, val := range req.Users {
+		reqEmployeeJSON, _ := json.Marshal(val.Employee)
+
+		respEmployeeJSON, _ := http.Post("http://localhost:8080/Portal/springApi/api/employees", "application/json", bytes.NewBuffer(reqEmployeeJSON))
+		fmt.Println(respEmployeeJSON.Body)
+		// reqAbsenceJSON, _ := json.Marshal(req.Absence)
+	}
+	var ans *user.ModifyUserResponse
+	ans.Users = req.Users
+	return ans, nil
+}
+
+func (s *myServer) startWorkers() {
+	for i := 0; i < s.workers; i++ {
+		go s.worker()
+	}
+}
+
+func (s *myServer) worker() {
+	for {
+		select {
+		case req := <-s.queue:
+			_, _ = s.processRequests(req)
+		}
+	}
 }
 
 func main() {
@@ -96,7 +145,7 @@ func main() {
 		log.Fatalf("Ошибка при создании listner: %s", err)
 	}
 	serverRegistrar := grpc.NewServer()
-	service := &myServer{}
+	service := newServer(config.Grpc.QueueSize, config.Grpc.HandlerPoolSize, basicAuth)
 	user.RegisterUserServiceServer(serverRegistrar, service)
 	err = serverRegistrar.Serve(lis)
 	if err != nil {
