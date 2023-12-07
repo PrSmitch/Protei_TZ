@@ -64,18 +64,20 @@ type myServer struct {
 	processedData map[string]*[]user.UserInfo
 	mutex         sync.Mutex
 	basicAuth     string
+	url           string
 }
 
-func newServer(queueSize, workers int, basicAuth string) *myServer {
+func newServer(queueSize, workers int, basicAuth, url string) *myServer {
 	return &myServer{
 		queue:         make(chan *user.ModifyUserRequest, queueSize),
 		workers:       workers,
 		processedData: make(map[string]*[]user.UserInfo),
 		basicAuth:     basicAuth,
+		url:           url,
 	}
 }
 
-func (s *myServer) ModifyUser(ctx context.Context, req *user.ModifyUserRequest) (*user.ModifyUserResponse, error) {
+func (s *myServer) ModifyUser(_ context.Context, req *user.ModifyUserRequest) (*user.ModifyUserResponse, error) {
 	select {
 	case s.queue <- req:
 		return s.processRequests(req)
@@ -86,8 +88,9 @@ func (s *myServer) ModifyUser(ctx context.Context, req *user.ModifyUserRequest) 
 
 func (s *myServer) processRequests(req *user.ModifyUserRequest) (*user.ModifyUserResponse, error) {
 	for _, val := range req.Users {
+		urlEmployee := s.url + "/employees"
 		reqEmployeeJSON, _ := json.Marshal(val.Employee)
-		reqEmployee, err := http.NewRequest("POST", "http://localhost:8080/process", bytes.NewBuffer(reqEmployeeJSON))
+		reqEmployee, err := http.NewRequest("POST", urlEmployee, bytes.NewBuffer(reqEmployeeJSON))
 		if err != nil {
 			log.Fatalf("Ошибка при СОЗДАНИИ запроса: %s", err)
 		}
@@ -107,8 +110,9 @@ func (s *myServer) processRequests(req *user.ModifyUserRequest) (*user.ModifyUse
 		}
 
 		val.Absence.Id = []int64{EmployeeResponse.Id}
+		urlAbsence := s.url + "/absences"
 		reqAbsenceJSON, _ := json.Marshal(val.Absence)
-		reqAbsence, err := http.NewRequest("POST", "http://localhost:8080/process", bytes.NewBuffer(reqAbsenceJSON))
+		reqAbsence, err := http.NewRequest("POST", urlAbsence, bytes.NewBuffer(reqAbsenceJSON))
 		if err != nil {
 			log.Fatalf("Ошибка при СОЗДАНИИ запроса: %s", err)
 		}
@@ -120,13 +124,31 @@ func (s *myServer) processRequests(req *user.ModifyUserRequest) (*user.ModifyUse
 		}
 		defer respAbsence.Body.Close()
 		bodyAbsence, _ := io.ReadAll(respAbsence.Body)
-
 		AbsenceResponse := new(AbsenceContract)
 		err = json.Unmarshal(bodyAbsence, AbsenceResponse)
 		if err != nil {
 			log.Fatalf("Ошибка при UNMARSHAL запроса: %s", err)
 		}
+		var emoji string
+		switch AbsenceResponse.Id {
+		case 1, 2, 10:
+			emoji = "\U0001f3e0"
+		case 3, 4:
+			emoji = "\u2708\ufe0f"
+		case 5, 6:
+			emoji = "\U0001f321\ufe0f"
+		case 7, 8:
+			emoji = "\U0001f315"
+		case 9:
+			emoji = "\U0001f393"
+		case 11, 12, 13:
+			emoji = "\u2600\ufe0f"
+		default:
+			emoji = ""
+		}
+		val.Employee.Name += emoji
 	}
+	fmt.Println(req.Users)
 	ans := &user.ModifyUserResponse{}
 	ans.Users = make([]*user.UserInfo, len(req.Users))
 	ans.Users = req.Users
@@ -179,7 +201,8 @@ func main() {
 		log.Fatalf("Ошибка при создании listner: %s", err)
 	}
 	serverRegistrar := grpc.NewServer()
-	service := newServer(config.Grpc.QueueSize, config.Grpc.HandlerPoolSize, basicAuth)
+	url := fmt.Sprintf("https://%s:%s/Portal/springApi/api", config.Http.IP, config.Http.Port)
+	service := newServer(config.Grpc.QueueSize, config.Grpc.HandlerPoolSize, basicAuth, url)
 	user.RegisterUserServiceServer(serverRegistrar, service)
 	go func() {
 		err = serverRegistrar.Serve(lis)
@@ -187,7 +210,7 @@ func main() {
 			log.Fatalf("Ошибка при serve: %s", err)
 		}
 	}()
-	server := newServer(config.Grpc.QueueSize, config.Grpc.HandlerPoolSize, basicAuth) // 100 - размер очереди, 10 - количество обработчиков.
+	server := newServer(config.Grpc.QueueSize, config.Grpc.HandlerPoolSize, basicAuth, url)
 	server.startWorkers()
 	time.Sleep(60 * time.Second)
 	serverRegistrar.GracefulStop()
