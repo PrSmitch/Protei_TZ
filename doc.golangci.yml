@@ -4,7 +4,7 @@ linters-settings:
   misspell:
     locale: US
   goimports:
-    local-prefixes: git.protei.ru/go/services
+    local-prefixes: https://github.com/PrSmitch/Protei_TZ
   revive:
     ignore-generated-header: true
     severity: warning
