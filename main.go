@@ -8,11 +8,15 @@ import (
 	"fmt"
 	user "github.com/PrSmitch/Protei_TZ/proto_generated"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+	"io"
 	"log"
 	"net"
 	"net/http"
 	"os"
 	"sync"
+	"time"
 )
 
 type Config struct {
@@ -76,28 +80,55 @@ func (s *myServer) ModifyUser(ctx context.Context, req *user.ModifyUserRequest) 
 	case s.queue <- req:
 		return s.processRequests(req)
 	default:
-		return nil, grpc.Errorf(grpc.Code(resourceExhausted), "Очередь полная")
+		return nil, status.Errorf(codes.ResourceExhausted, "Очередь полная")
 	}
-	// return &user.ModifyUserResponse{Users: make([]*user.UserInfo, 2)}, nil
-	/* return &user.ModifyUserResponse{ User: &user.UserEmployee{
-		Id:        1234,
-		Name:      "Sergey :)",
-		WorkPhone: 12332,
-		Email:     "fff@mail.ru",
-		DateFrom:  "ss",
-		DateTo:    "sss",
-	}}, nil */
 }
 
 func (s *myServer) processRequests(req *user.ModifyUserRequest) (*user.ModifyUserResponse, error) {
-	for key, val := range req.Users {
+	for _, val := range req.Users {
 		reqEmployeeJSON, _ := json.Marshal(val.Employee)
+		reqEmployee, err := http.NewRequest("POST", "http://localhost:8080/process", bytes.NewBuffer(reqEmployeeJSON))
+		if err != nil {
+			log.Fatalf("Ошибка при СОЗДАНИИ запроса: %s", err)
+		}
+		reqEmployee.Header.Add("Authorization", s.basicAuth)
+		reqEmployee.Header.Set("Content-Type", "application/json")
+		client := &http.Client{}
+		respEmployee, err := client.Do(reqEmployee)
+		if err != nil {
+			log.Fatalf("Ошибка при ОТПРАВКЕ запроса: %s", err)
+		}
+		defer respEmployee.Body.Close()
+		bodyEmployee, _ := io.ReadAll(respEmployee.Body)
+		EmployeeResponse := new(EmployeeContract)
+		err = json.Unmarshal(bodyEmployee, EmployeeResponse)
+		if err != nil {
+			log.Fatalf("Ошибка при UNMARSHAL запроса: %s", err)
+		}
 
-		respEmployeeJSON, _ := http.Post("http://localhost:8080/Portal/springApi/api/employees", "application/json", bytes.NewBuffer(reqEmployeeJSON))
-		fmt.Println(respEmployeeJSON.Body)
-		// reqAbsenceJSON, _ := json.Marshal(req.Absence)
+		val.Absence.Id = []int64{EmployeeResponse.Id}
+		reqAbsenceJSON, _ := json.Marshal(val.Absence)
+		reqAbsence, err := http.NewRequest("POST", "http://localhost:8080/process", bytes.NewBuffer(reqAbsenceJSON))
+		if err != nil {
+			log.Fatalf("Ошибка при СОЗДАНИИ запроса: %s", err)
+		}
+		reqAbsence.Header.Add("Authorization", s.basicAuth)
+		reqAbsence.Header.Set("Content-Type", "application/json")
+		respAbsence, err := client.Do(reqAbsence)
+		if err != nil {
+			log.Fatalf("Ошибка при ОТПРАВКЕ запроса: %s", err)
+		}
+		defer respAbsence.Body.Close()
+		bodyAbsence, _ := io.ReadAll(respAbsence.Body)
+
+		AbsenceResponse := new(AbsenceContract)
+		err = json.Unmarshal(bodyAbsence, AbsenceResponse)
+		if err != nil {
+			log.Fatalf("Ошибка при UNMARSHAL запроса: %s", err)
+		}
 	}
-	var ans *user.ModifyUserResponse
+	ans := &user.ModifyUserResponse{}
+	ans.Users = make([]*user.UserInfo, len(req.Users))
 	ans.Users = req.Users
 	return ans, nil
 }
@@ -117,27 +148,30 @@ func (s *myServer) worker() {
 	}
 }
 
+type EmployeeContract struct {
+	Id          int64  `json:"id"`
+	DisplayName string `json:"displayName"`
+	Email       string `json:"email"`
+	WorkPhone   int64  `json:"workPhone"`
+}
+
+type AbsenceContract struct {
+	Id         int64  `json:"id"`
+	PersonID   int64  `json:"personid"`
+	CreateDate string `json:"createDate"`
+	DateFrom   string `json:"dateFrom"`
+	ReasonID   int64  `json:"reasonid"`
+}
+
 func main() {
 	config := LoadConfiguration("config.json")
 
 	username := config.Http.Auth.Username
 	password := config.Http.Auth.Password
-	url := fmt.Sprintf("http://%s:%s/Portal/springApi/api", config.Http.IP, config.Http.Port)
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		log.Fatalf("Ошибка при СОЗДАНИИ запроса: %s", err)
-	}
 	auth := username + ":" + password
 	basicAuth := "Basic " + base64.StdEncoding.EncodeToString([]byte(auth))
-	req.Header.Add("Authorization", basicAuth)
 
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		log.Fatalf("Ошибка при ОТПРАВКЕ запроса: %s", err)
-	}
-	defer resp.Body.Close()
-	fmt.Println("Аутентификация выполнена, запускается GRPC-сервер")
+	fmt.Println("Запускается GRPC-сервер")
 
 	address := config.Grpc.Ip + ":" + config.Grpc.Port
 	lis, err := net.Listen("tcp", address)
@@ -147,8 +181,14 @@ func main() {
 	serverRegistrar := grpc.NewServer()
 	service := newServer(config.Grpc.QueueSize, config.Grpc.HandlerPoolSize, basicAuth)
 	user.RegisterUserServiceServer(serverRegistrar, service)
-	err = serverRegistrar.Serve(lis)
-	if err != nil {
-		log.Fatalf("Ошибка при serve: %s", err)
-	}
+	go func() {
+		err = serverRegistrar.Serve(lis)
+		if err != nil {
+			log.Fatalf("Ошибка при serve: %s", err)
+		}
+	}()
+	server := newServer(config.Grpc.QueueSize, config.Grpc.HandlerPoolSize, basicAuth) // 100 - размер очереди, 10 - количество обработчиков.
+	server.startWorkers()
+	time.Sleep(60 * time.Second)
+	serverRegistrar.GracefulStop()
 }
