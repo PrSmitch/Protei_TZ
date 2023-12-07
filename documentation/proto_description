@@ -1,0 +1,38 @@
+
+// Сервис с единственным методом для принятия запросов о пользователях и отправки модифицированного ответа
+service UserService {
+  rpc ModifyUser(ModifyUserRequest) returns (ModifyUserResponse);
+}
+
+// Структу с информацией для отправки http-запроса для получения ID работника
+message userEmployee {
+  repeated int64 id = 1;
+  string Name  = 2;
+  int64 workPhone = 3;
+  string email = 4;
+  string dateFrom = 5;
+  string dateTo = 6;
+}
+
+// Структура с информацией о статусе отсутсвия в указанный период указаного работника с данным ID
+message userAbsence {
+  repeated int64 id = 1;
+  string dateFrom = 2;
+  string dateTo = 3;
+}
+
+// Структура, совмещающая две предыдущих
+message UserInfo {
+  userAbsence absence = 1;
+  userEmployee employee = 2;
+}
+
+// Запрос
+message ModifyUserRequest {
+  repeated UserInfo users = 1;
+}
+
+// Ответ
+message ModifyUserResponse {
+  repeated UserInfo users = 1;
+}

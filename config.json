@@ -12,8 +12,5 @@
         "username": "admin",
         "password": "admin"
       }
-  },
-  "logging": {
-    "level": "info"
   }
 }
